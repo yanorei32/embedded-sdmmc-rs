@@ -423,7 +423,7 @@ where
     }
 
     /// unsafe Wake
-    pub unsafe fn wake_with_opts(&mut self, options: AcquireOpts) -> Result<(), Error> {
+    pub unsafe fn wake_with_opts(&mut self, options: InitOpts) -> Result<(), Error> {
         let result = self.0.with_chip_select(|s| {
             s.cs_low()?;
 
