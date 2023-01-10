@@ -83,6 +83,8 @@ pub enum Error {
 pub enum State {
     /// Card is not initialised
     NoInit,
+    /// Card is sleeping
+    Sleep,
     /// Card is in an error state
     Error,
     /// Card is initialised and idle
@@ -387,6 +389,54 @@ where
     // If there is any need to flush data, it should be implemented here.
     fn deinit(&mut self) {
         self.0.state = State::NoInit;
+    }
+
+    /// unsafe Wake
+    pub unsafe fn wake(&mut self) -> Result<(), Error> {
+        self.wake_with_opts(Default::default())
+    }
+
+    /// unsafe Wake
+    pub unsafe fn wake_with_opts(&mut self, options: AcquireOpts) -> Result<(), Error> {
+        let result = self.0.with_chip_select(|s| {
+            s.cs_low()?;
+
+            if s.card_command(CMD59, 1)? != R1_IDLE_STATE && options.require_crc {
+                return Err(Error::CantEnableCRC);
+            }
+
+            let arg = match s.card_type {
+                CardType::SD1 => 0,
+                CardType::SD2 | CardType::SDHC => 0x4000_0000,
+            };
+
+            let mut delay = Delay::new();
+            while s.card_acmd(ACMD41, arg)? != R1_READY_STATE {
+                delay.delay(Error::TimeoutACommand(ACMD41))?;
+            }
+
+            Ok(())
+        });
+
+        if let Ok(_) = result {
+            self.0.state = State::Idle;
+        }
+
+        result
+    }
+
+    /// unsafe Sleep
+    pub unsafe fn sleep(&mut self) -> Result<(), Error> {
+        let result = self.0.with_chip_select(|s| {
+            s.card_command(CMD0, 0)?;
+            Ok(())
+        });
+
+        if let Ok(_) = result {
+            self.0.state = State::Sleep;
+        }
+
+        result
     }
 
     /// Return the usable size of this SD card in bytes.
