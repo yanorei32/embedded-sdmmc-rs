@@ -176,6 +176,11 @@ where
         BlockSpi(self)
     }
 
+    /// Use uninitialized SD card.
+    pub unsafe fn use_uninitialized(&mut self) -> InitToken {
+        InitToken { _private: () }
+    }
+
     /// Try to initialize the card into a known state. Returns a `Result<InitToken, Error>`. The  returned [`InitToken`]
     /// can be used to acquire the card using [`acquire`](SdMmcSpi::acquire). This mehtod can be used in cases where you might want
     /// to retry initializing the card more than once, and ensure that the lifetimes check out.
@@ -424,31 +429,7 @@ where
 
     /// unsafe Wake
     pub unsafe fn wake_with_opts(&mut self, options: InitOpts) -> Result<(), Error> {
-        let result = self.0.with_chip_select(|s| {
-            s.cs_low()?;
-
-            if s.card_command(CMD59, 1)? != R1_IDLE_STATE && options.require_crc {
-                return Err(Error::CantEnableCRC);
-            }
-
-            let arg = match s.card_type {
-                CardType::SD1 => 0,
-                CardType::SD2 | CardType::SDHC => 0x4000_0000,
-            };
-
-            let mut delay = Delay::new();
-            while s.card_acmd(ACMD41, arg)? != R1_READY_STATE {
-                delay.delay(Error::TimeoutACommand(ACMD41))?;
-            }
-
-            Ok(())
-        });
-
-        if let Ok(_) = result {
-            self.0.state = State::Idle;
-        }
-
-        result
+        self.0.try_init_with_opts(options).map(|_| ())
     }
 
     /// unsafe Sleep
